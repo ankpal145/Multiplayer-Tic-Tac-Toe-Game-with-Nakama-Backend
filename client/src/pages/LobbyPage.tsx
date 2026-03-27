@@ -1,30 +1,59 @@
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import nakamaClient from "../lib/nakama.ts";
 
 type GameMode = "classic" | "timed";
+
+const MAX_RETRIES = 5;
+const RETRY_DELAY_MS = 3000;
 
 export default function LobbyPage() {
   const navigate = useNavigate();
   const [mode, setMode] = useState<GameMode>("classic");
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState("");
+  const cancelledRef = useRef(false);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
-  async function handleFindMatch() {
+  const handleFindMatch = useCallback(async () => {
     setSearching(true);
     setError("");
+    cancelledRef.current = false;
 
     try {
       if (!nakamaClient.isConnected) {
         await nakamaClient.authenticate();
       }
-      await nakamaClient.findMatch(mode);
-      navigate("/game", { state: { mode } });
+
+      for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        if (cancelledRef.current) return;
+
+        try {
+          await nakamaClient.leaveMatch();
+          await nakamaClient.findMatch(mode);
+          if (cancelledRef.current) return;
+          navigate("/game", { state: { mode } });
+          return;
+        } catch {
+          if (attempt < MAX_RETRIES - 1 && !cancelledRef.current) {
+            await new Promise<void>((resolve) => {
+              retryTimerRef.current = setTimeout(resolve, RETRY_DELAY_MS);
+            });
+          }
+        }
+      }
+
+      if (!cancelledRef.current) {
+        setError("Could not find an opponent. Please try again.");
+        setSearching(false);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to find match");
-      setSearching(false);
+      if (!cancelledRef.current) {
+        setError(err instanceof Error ? err.message : "Failed to find match");
+        setSearching(false);
+      }
     }
-  }
+  }, [mode, navigate]);
 
   return (
     <div className="min-h-dvh flex flex-col items-center justify-center px-4">
@@ -96,6 +125,8 @@ export default function LobbyPage() {
             </p>
             <button
               onClick={() => {
+                cancelledRef.current = true;
+                clearTimeout(retryTimerRef.current);
                 nakamaClient.leaveMatch();
                 setSearching(false);
               }}

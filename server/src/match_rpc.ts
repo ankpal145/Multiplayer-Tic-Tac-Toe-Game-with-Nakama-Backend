@@ -14,18 +14,24 @@ export function rpcFindMatch(
   }
 
   const mode = request.mode || "classic";
-
-  // Search for an open match of the requested mode
   const query = `+label.open:1 +label.mode:${mode}`;
-  const matches = nk.matchList(10, true, null, null, 1, query);
 
-  if (matches.length > 0) {
-    logger.info("Found existing match: %s", matches[0].matchId);
-    return JSON.stringify({ matchIds: [matches[0].matchId] });
+  // Try multiple times to find an open match to reduce race conditions
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const matches = nk.matchList(10, true, null, null, 1, query);
+    if (matches.length > 0) {
+      logger.info("Found existing match: %s (attempt %d)", matches[0].matchId, attempt);
+      return JSON.stringify({ matchIds: [matches[0].matchId] });
+    }
+
+    if (attempt === 0) {
+      const matchId = nk.matchCreate("tic-tac-toe", { mode });
+      logger.info("Created new match: %s (mode: %s)", matchId, mode);
+      return JSON.stringify({ matchIds: [matchId] });
+    }
   }
 
-  // No open match found, create a new one
   const matchId = nk.matchCreate("tic-tac-toe", { mode });
-  logger.info("Created new match: %s (mode: %s)", matchId, mode);
+  logger.info("Created new match after retries: %s (mode: %s)", matchId, mode);
   return JSON.stringify({ matchIds: [matchId] });
 }

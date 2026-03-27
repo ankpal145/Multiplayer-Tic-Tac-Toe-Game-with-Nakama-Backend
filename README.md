@@ -29,10 +29,10 @@ Open the game URL in **two browser tabs** (or two devices) to test multiplayer.
 
 ### How It Works
 
-1. **Authentication** - Client connects via device authentication (UUID stored in localStorage). Nakama creates/returns a session with JWT tokens.
-2. **Matchmaking** - Client calls the `find_match` RPC with a mode (`classic` or `timed`). The server either finds an open match or creates a new one.
-3. **Gameplay** - Once two players join, the server broadcasts game start. Players send moves via WebSocket. The server validates every move, checks win conditions, and broadcasts state updates.
-4. **Leaderboard** - After each game, the server writes to three Nakama leaderboards (wins, losses, win_streak). The client fetches aggregated stats via `get_leaderboard` RPC.
+1. **Authentication** - Client authenticates with `POST /v2/account/authenticate/device`. Nakama returns a JWT session token (2h expiry). The user's display name is set via `PUT /v2/account`.
+2. **Matchmaking** - Client calls `POST /v2/rpc/find_match` with a mode (`classic` or `timed`). The server retries up to 3 times to find an open match before creating a new one. The client joins the returned match over WebSocket and waits for a `START` message.
+3. **Gameplay** - Once two players join, the server broadcasts `OpCode 1 (START)` with marks and player names. Players send moves as `OpCode 4 (MOVE)`. The server validates every move, checks win conditions, and broadcasts `OpCode 2 (UPDATE)` or `OpCode 3 (DONE)`.
+4. **Leaderboard** - After each game, the server updates the player's stats in Nakama storage (wins, losses, draws, streaks, score, time played) and writes the total score to the `player_ranking` leaderboard. The client fetches rankings via `POST /v2/rpc/get_leaderboard`.
 
 ### Server-Authoritative Design
 
@@ -160,22 +160,283 @@ Open **two browser tabs** (or two different browsers / incognito windows) to htt
 3. Tab 2: Click **Play** → choose same mode → **Find Match** (joins the existing match)
 4. The game starts - take turns clicking cells!
 
-## OpCode Protocol
+## API Reference
 
-Communication between client and server uses numeric operation codes:
+Base URL: `https://tictactoe-nakama.duckdns.org` (production) or `http://localhost:7350` (local)
 
-| OpCode | Direction | Name | Payload |
-|--------|-----------|------|---------|
-| 1 | Server → Client | START | `{ marks: {userId: 1\|2}, activePlayer, mode, board, turnDeadline }` |
-| 2 | Server → Client | UPDATE | `{ board, activePlayer, turnDeadline }` |
-| 3 | Server → Client | DONE | `{ board, winner, winnerUserId, reason }` |
-| 4 | Client → Server | MOVE | `{ position }` (0-8) |
-| 5 | Server → Client | TIMER | `{ secondsRemaining }` |
-| 6 | Server → Client | ERROR | `{ message }` |
+All authenticated endpoints require the `Authorization` header with a Bearer token obtained from authentication.
 
-**Winner values:** 0 = none, 1 = X won, 2 = O won, 3 = draw
+---
 
-**Reason values:** `"win"`, `"draw"`, `"timeout"`, `"opponent_left"`, `"server_shutdown"`
+### 1. Authenticate (Device)
+
+Creates a new account or logs in with an existing device ID.
+
+```
+POST /v2/account/authenticate/device?create=true
+```
+
+**Headers:**
+
+| Header | Value |
+|--------|-------|
+| `Authorization` | `Basic base64("defaultkey:")` |
+| `Content-Type` | `application/json` |
+
+**Request Body:**
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+**Response `200 OK`:**
+
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6...",
+  "created": true
+}
+```
+
+The `token` is a JWT (expires in 2 hours). Use it as `Bearer <token>` for all subsequent requests.
+
+---
+
+### 2. Update Account (Set Display Name)
+
+Updates the authenticated user's profile.
+
+```
+PUT /v2/account
+```
+
+**Headers:**
+
+| Header | Value |
+|--------|-------|
+| `Authorization` | `Bearer <session_token>` |
+| `Content-Type` | `application/json` |
+
+**Request Body:**
+
+```json
+{
+  "display_name": "Ace",
+  "username": "ace_3f2a1"
+}
+```
+
+**Response `200 OK`:** Empty body on success.
+
+---
+
+### 3. Find Match (Custom RPC)
+
+Finds an existing open match or creates a new one. Returns the match ID to join.
+
+```
+POST /v2/rpc/find_match
+```
+
+**Headers:**
+
+| Header | Value |
+|--------|-------|
+| `Authorization` | `Bearer <session_token>` |
+| `Content-Type` | `application/json` |
+
+**Request Body:**
+
+```json
+{
+  "mode": "classic"
+}
+```
+
+`mode` is `"classic"` (no time limit) or `"timed"` (30s per turn).
+
+**Response `200 OK`:**
+
+```json
+{
+  "payload": {
+    "matchIds": ["b4a3c2d1-e5f6-7890-abcd-ef1234567890.nakama1"]
+  }
+}
+```
+
+---
+
+### 4. Get Leaderboard (Custom RPC)
+
+Returns global player rankings sorted by score, with detailed stats.
+
+```
+POST /v2/rpc/get_leaderboard
+```
+
+**Headers:**
+
+| Header | Value |
+|--------|-------|
+| `Authorization` | `Bearer <session_token>` |
+| `Content-Type` | `application/json` |
+
+**Request Body:**
+
+```json
+{
+  "limit": 20
+}
+```
+
+**Response `200 OK`:**
+
+```json
+{
+  "payload": {
+    "entries": [
+      {
+        "rank": 1,
+        "userId": "user-uuid-1",
+        "username": "Ace",
+        "wins": 10,
+        "losses": 2,
+        "draws": 1,
+        "totalGames": 13,
+        "winStreak": 5,
+        "score": 2100,
+        "timePlayed": 480
+      }
+    ],
+    "nextCursor": null,
+    "prevCursor": null
+  }
+}
+```
+
+**Score Calculation:** Win = +200 pts, Draw = +100 pts, Loss = +0 pts.
+
+---
+
+### 5. WebSocket Connection
+
+Real-time match communication uses Nakama's WebSocket protocol.
+
+```
+WSS /ws?token=<session_token>&status=true&lang=en
+```
+
+#### 5a. Join Match
+
+After connecting, send a match join message:
+
+```json
+{
+  "match_join": {
+    "match_id": "b4a3c2d1-e5f6-7890-abcd-ef1234567890.nakama1"
+  }
+}
+```
+
+#### 5b. Send Move (Client → Server)
+
+```json
+{
+  "match_data_send": {
+    "match_id": "<match_id>",
+    "op_code": 4,
+    "data": "{\"position\": 4}"
+  }
+}
+```
+
+`position` is 0-8 (top-left to bottom-right).
+
+#### 5c. Receive Match Data (Server → Client)
+
+All server messages arrive as `match_data` events:
+
+**OpCode 1 — START** (game begins, both players joined):
+
+```json
+{
+  "op_code": 1,
+  "data": {
+    "marks": { "user-id-1": 1, "user-id-2": 2 },
+    "activePlayer": "user-id-1",
+    "mode": "classic",
+    "board": [0,0,0,0,0,0,0,0,0],
+    "turnDeadline": 0,
+    "playerNames": { "user-id-1": "Ace", "user-id-2": "Boo" }
+  }
+}
+```
+
+**OpCode 2 — UPDATE** (board state after a valid move):
+
+```json
+{
+  "op_code": 2,
+  "data": {
+    "board": [1,0,0,0,2,0,0,0,0],
+    "activePlayer": "user-id-2",
+    "turnDeadline": 1711584000
+  }
+}
+```
+
+**OpCode 3 — DONE** (game over):
+
+```json
+{
+  "op_code": 3,
+  "data": {
+    "board": [1,1,1,2,2,0,0,0,0],
+    "winner": 1,
+    "winnerUserId": "user-id-1",
+    "reason": "win",
+    "pointsAwarded": { "user-id-1": 200, "user-id-2": 0 }
+  }
+}
+```
+
+`winner`: 0 = none, 1 = X, 2 = O, 3 = draw. `reason`: `"win"`, `"draw"`, `"timeout"`, `"opponent_left"`, `"server_shutdown"`.
+
+**OpCode 5 — TIMER** (timed mode countdown sync):
+
+```json
+{
+  "op_code": 5,
+  "data": { "secondsRemaining": 18 }
+}
+```
+
+**OpCode 6 — ERROR** (invalid action):
+
+```json
+{
+  "op_code": 6,
+  "data": { "message": "Not your turn." }
+}
+```
+
+---
+
+### 6. Nakama Admin Console
+
+```
+GET http://<server-ip>:7351
+```
+
+**Credentials:** Username `admin`, Password `password`
+
+Provides a web UI for inspecting accounts, matches, leaderboards, and storage objects.
+
+---
 
 ## Server Configuration
 
@@ -183,7 +444,7 @@ Communication between client and server uses numeric operation codes:
 
 | Setting | Value | Description |
 |---------|-------|-------------|
-| Image | `nakama:3.24.2` | Nakama server version |
+| Image | `heroiclabs/nakama:3.24.2` | Nakama server version |
 | Database | CockroachDB 23.1 | Persistent storage |
 | Logger level | INFO (production) / DEBUG (dev) | Log verbosity |
 | Session token expiry | 7200s (2h) | JWT session lifetime |

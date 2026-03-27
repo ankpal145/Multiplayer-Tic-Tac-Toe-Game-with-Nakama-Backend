@@ -199,15 +199,9 @@ export default function GamePage() {
     nakamaClient.makeMove(index);
   }
 
-  async function handlePlayAgain() {
-    await nakamaClient.leaveMatch();
-    setGame(initialGameState);
-    try {
-      await nakamaClient.findMatch(game.mode);
-    } catch {
-      navigate("/lobby");
-      return;
-    }
+  function handlePlayAgain() {
+    nakamaClient.leaveMatch();
+    navigate("/lobby", { state: { autoSearch: true, mode: game.mode } });
   }
 
   function handleGoHome() {

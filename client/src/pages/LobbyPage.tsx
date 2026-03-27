@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import type { MatchData } from "@heroiclabs/nakama-js";
 import nakamaClient, { OpCode } from "../lib/nakama.ts";
 
@@ -9,12 +9,16 @@ const MATCH_TIMEOUT_SEC = 30;
 
 export default function LobbyPage() {
   const navigate = useNavigate();
-  const [mode, setMode] = useState<GameMode>("classic");
+  const location = useLocation();
+  const [mode, setMode] = useState<GameMode>(
+    ((location.state as any)?.mode as GameMode) || "classic"
+  );
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState("");
   const [countdown, setCountdown] = useState(MATCH_TIMEOUT_SEC);
   const cancelledRef = useRef(false);
   const countdownRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const autoSearchDone = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -101,6 +105,13 @@ export default function LobbyPage() {
       }
     }
   }, [mode, navigate]);
+
+  useEffect(() => {
+    if ((location.state as any)?.autoSearch && !autoSearchDone.current) {
+      autoSearchDone.current = true;
+      handleFindMatch();
+    }
+  }, [location.state, handleFindMatch]);
 
   function cancelSearch() {
     cancelledRef.current = true;

@@ -1,14 +1,11 @@
 export function setupLeaderboards(nk: nkruntime.Nakama, logger: nkruntime.Logger) {
-  // Wins leaderboard - descending, increment operator
-  nk.leaderboardCreate("wins", false, nkruntime.SortOrder.DESCENDING, nkruntime.Operator.INCREMENTAL);
+  nk.leaderboardCreate("wins", false, "descending" as nkruntime.SortOrder, "increment" as nkruntime.Operator);
   logger.info("Leaderboard 'wins' created");
 
-  // Losses leaderboard - ascending, increment operator
-  nk.leaderboardCreate("losses", false, nkruntime.SortOrder.ASCENDING, nkruntime.Operator.INCREMENTAL);
+  nk.leaderboardCreate("losses", false, "ascending" as nkruntime.SortOrder, "increment" as nkruntime.Operator);
   logger.info("Leaderboard 'losses' created");
 
-  // Win streak leaderboard - descending, set operator (best score kept)
-  nk.leaderboardCreate("win_streak", false, nkruntime.SortOrder.DESCENDING, nkruntime.Operator.BEST);
+  nk.leaderboardCreate("win_streak", false, "descending" as nkruntime.SortOrder, "best" as nkruntime.Operator);
   logger.info("Leaderboard 'win_streak' created");
 }
 

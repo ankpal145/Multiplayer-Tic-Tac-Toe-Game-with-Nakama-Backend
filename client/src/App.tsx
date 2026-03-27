@@ -1,4 +1,6 @@
 import { Routes, Route, Navigate } from "react-router-dom";
+import { Analytics } from "@vercel/analytics/react";
+import { SpeedInsights } from "@vercel/speed-insights/react";
 import AuthPage from "./pages/AuthPage.tsx";
 import LobbyPage from "./pages/LobbyPage.tsx";
 import GamePage from "./pages/GamePage.tsx";
@@ -14,6 +16,8 @@ export default function App() {
         <Route path="/leaderboard" element={<LeaderboardPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      <Analytics />
+      <SpeedInsights />
     </div>
   );
 }

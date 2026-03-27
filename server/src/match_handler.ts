@@ -17,7 +17,17 @@ const TURN_TIME_LIMIT_SEC = 30;
 
 const SCORE_WIN = 200;
 const SCORE_DRAW = 100;
-const SCORE_LOSS = 0;
+
+interface PlayerStats {
+  wins: number;
+  losses: number;
+  draws: number;
+  totalGames: number;
+  currentStreak: number;
+  bestStreak: number;
+  score: number;
+  timePlayed: number;
+}
 
 interface MatchState {
   board: number[];
@@ -51,6 +61,78 @@ function checkWinner(board: number[]): number {
 
 function isDraw(board: number[]): boolean {
   return board.every(cell => cell !== 0);
+}
+
+function readPlayerStats(nk: nkruntime.Nakama, playerId: string): PlayerStats {
+  const defaults: PlayerStats = {
+    wins: 0, losses: 0, draws: 0, totalGames: 0,
+    currentStreak: 0, bestStreak: 0, score: 0, timePlayed: 0,
+  };
+  try {
+    const objects = nk.storageRead([{ collection: "player_stats", key: "stats", userId: playerId }]);
+    if (objects && objects.length > 0 && objects[0].value) {
+      const v = objects[0].value as { [key: string]: any };
+      return {
+        wins: Number(v["wins"]) || 0,
+        losses: Number(v["losses"]) || 0,
+        draws: Number(v["draws"]) || 0,
+        totalGames: Number(v["totalGames"]) || 0,
+        currentStreak: Number(v["currentStreak"]) || 0,
+        bestStreak: Number(v["bestStreak"]) || 0,
+        score: Number(v["score"]) || 0,
+        timePlayed: Number(v["timePlayed"]) || 0,
+      };
+    }
+  } catch {}
+  return defaults;
+}
+
+function updatePlayerStats(
+  nk: nkruntime.Nakama,
+  logger: nkruntime.Logger,
+  playerId: string,
+  outcome: "win" | "loss" | "draw",
+  elapsedSec: number
+) {
+  const stats = readPlayerStats(nk, playerId);
+
+  stats.totalGames++;
+  stats.timePlayed += elapsedSec;
+
+  if (outcome === "win") {
+    stats.wins++;
+    stats.score += SCORE_WIN;
+    stats.currentStreak++;
+    if (stats.currentStreak > stats.bestStreak) {
+      stats.bestStreak = stats.currentStreak;
+    }
+  } else if (outcome === "loss") {
+    stats.losses++;
+    stats.currentStreak = 0;
+  } else {
+    stats.draws++;
+    stats.score += SCORE_DRAW;
+    stats.currentStreak = 0;
+  }
+
+  try {
+    nk.storageWrite([{
+      collection: "player_stats",
+      key: "stats",
+      userId: playerId,
+      value: stats as unknown as { [key: string]: any },
+      permissionRead: 2,
+      permissionWrite: 0,
+    }]);
+  } catch (e) {
+    logger.error("Failed to write player_stats for %s: %s", playerId, e);
+  }
+
+  try {
+    nk.leaderboardRecordWrite("player_ranking", playerId, undefined, stats.score, 0, undefined);
+  } catch (e) {
+    logger.error("Failed to write player_ranking for %s: %s", playerId, e);
+  }
 }
 
 export const matchInit: nkruntime.MatchInitFunction = function (
@@ -126,10 +208,10 @@ export const matchJoin: nkruntime.MatchJoinFunction = function (
 
     if (!s.marks[presence.userId]) {
       if (s.playerOrder.length === 0) {
-        s.marks[presence.userId] = 1; // X
+        s.marks[presence.userId] = 1;
         s.playerOrder.push(presence.userId);
       } else if (s.playerOrder.length === 1) {
-        s.marks[presence.userId] = 2; // O
+        s.marks[presence.userId] = 2;
         s.playerOrder.push(presence.userId);
       }
     }
@@ -152,19 +234,19 @@ export const matchJoin: nkruntime.MatchJoinFunction = function (
     }
 
     const playerNames: { [userId: string]: string } = {};
-    for (const uid of s.playerOrder) {
-      const p = s.presences[uid];
-      if (p) {
-        try {
-          const accounts = nk.accountsGetId([uid]);
-          if (accounts && accounts.length > 0) {
-            playerNames[uid] = accounts[0].user?.displayName || accounts[0].user?.username || "Player";
-          } else {
-            playerNames[uid] = p.username || "Player";
+    try {
+      const accounts = nk.accountsGetId(s.playerOrder);
+      if (accounts) {
+        for (const acc of accounts) {
+          if (acc.user) {
+            playerNames[acc.user.id] = acc.user.displayName || acc.user.username || "Player";
           }
-        } catch {
-          playerNames[uid] = p.username || "Player";
         }
+      }
+    } catch {
+      for (const uid of s.playerOrder) {
+        const p = s.presences[uid];
+        playerNames[uid] = p?.username || "Player";
       }
     }
 
@@ -213,12 +295,13 @@ export const matchLeave: nkruntime.MatchLeaveFunction = function (
       winner: s.winner,
       winnerUserId: winnerId,
       reason: "opponent_left",
-      pointsAwarded: { [winnerId]: SCORE_WIN, [loserId]: SCORE_LOSS },
+      pointsAwarded: { [winnerId]: SCORE_WIN, [loserId]: 0 },
     };
     dispatcher.broadcastMessage(OpCode.DONE, JSON.stringify(doneMsg));
 
     const elapsed = s.startedAt > 0 ? Math.floor(Date.now() / 1000) - s.startedAt : 0;
-    writeGameResult(nk, logger, winnerId, loserId, elapsed);
+    updatePlayerStats(nk, logger, winnerId, "win", elapsed);
+    updatePlayerStats(nk, logger, loserId, "loss", elapsed);
   }
 
   if (remainingPlayers.length === 0) {
@@ -250,7 +333,6 @@ export const matchLoop: nkruntime.MatchLoopFunction = function (
     return { state: s };
   }
 
-  // Timer check for timed mode
   if (s.mode === "timed" && s.turnDeadline > 0) {
     const now = Math.floor(Date.now() / 1000);
     const remaining = s.turnDeadline - now;
@@ -270,12 +352,13 @@ export const matchLoop: nkruntime.MatchLoopFunction = function (
         winner: s.winner,
         winnerUserId: winnerId,
         reason: "timeout",
-        pointsAwarded: { [winnerId]: SCORE_WIN, [loserId]: SCORE_LOSS },
+        pointsAwarded: { [winnerId]: SCORE_WIN, [loserId]: 0 },
       };
       dispatcher.broadcastMessage(OpCode.DONE, JSON.stringify(doneMsg));
 
       const elapsed = s.startedAt > 0 ? Math.floor(Date.now() / 1000) - s.startedAt : 0;
-      writeGameResult(nk, logger, winnerId, loserId, elapsed);
+      updatePlayerStats(nk, logger, winnerId, "win", elapsed);
+      updatePlayerStats(nk, logger, loserId, "loss", elapsed);
 
       return { state: s };
     }
@@ -333,12 +416,13 @@ export const matchLoop: nkruntime.MatchLoopFunction = function (
         winner: s.winner,
         winnerUserId: winnerId,
         reason: "win",
-        pointsAwarded: { [winnerId]: SCORE_WIN, [loserId]: SCORE_LOSS },
+        pointsAwarded: { [winnerId]: SCORE_WIN, [loserId]: 0 },
       };
       dispatcher.broadcastMessage(OpCode.DONE, JSON.stringify(doneMsg));
 
       const elapsed = s.startedAt > 0 ? Math.floor(Date.now() / 1000) - s.startedAt : 0;
-      writeGameResult(nk, logger, winnerId, loserId, elapsed);
+      updatePlayerStats(nk, logger, winnerId, "win", elapsed);
+      updatePlayerStats(nk, logger, loserId, "loss", elapsed);
 
       return { state: s };
     }
@@ -361,23 +445,12 @@ export const matchLoop: nkruntime.MatchLoopFunction = function (
 
       const elapsed = s.startedAt > 0 ? Math.floor(Date.now() / 1000) - s.startedAt : 0;
       for (const playerId of s.playerOrder) {
-        try {
-          nk.leaderboardRecordWrite("draws", playerId, undefined, 1, undefined, undefined);
-          nk.leaderboardRecordWrite("total_games", playerId, undefined, 1, undefined, undefined);
-          nk.leaderboardRecordWrite("score", playerId, undefined, SCORE_DRAW, undefined, undefined);
-          nk.leaderboardRecordWrite("win_streak", playerId, undefined, 0, undefined, undefined);
-          if (elapsed > 0) {
-            nk.leaderboardRecordWrite("time_played", playerId, undefined, elapsed, undefined, undefined);
-          }
-        } catch (e) {
-          logger.error("Failed to write draw stats for %s: %s", playerId, e);
-        }
+        updatePlayerStats(nk, logger, playerId, "draw", elapsed);
       }
 
       return { state: s };
     }
 
-    // Switch active player
     s.activePlayer = s.playerOrder.find(id => id !== s.activePlayer)!;
 
     if (s.mode === "timed") {
@@ -431,35 +504,3 @@ export const matchSignal: nkruntime.MatchSignalFunction = function (
   logger.debug("Match signal received: %s", data);
   return { state, data: "signal_ok" };
 };
-
-function writeGameResult(
-  nk: nkruntime.Nakama,
-  logger: nkruntime.Logger,
-  winnerId: string,
-  loserId: string,
-  elapsedSec: number
-) {
-  try {
-    nk.leaderboardRecordWrite("wins", winnerId, undefined, 1, undefined, undefined);
-    nk.leaderboardRecordWrite("win_streak", winnerId, undefined, 1, undefined, undefined);
-    nk.leaderboardRecordWrite("total_games", winnerId, undefined, 1, undefined, undefined);
-    nk.leaderboardRecordWrite("score", winnerId, undefined, SCORE_WIN, undefined, undefined);
-    if (elapsedSec > 0) {
-      nk.leaderboardRecordWrite("time_played", winnerId, undefined, elapsedSec, undefined, undefined);
-    }
-  } catch (e) {
-    logger.error("Failed to write winner leaderboard for %s: %s", winnerId, e);
-  }
-
-  try {
-    nk.leaderboardRecordWrite("losses", loserId, undefined, 1, undefined, undefined);
-    nk.leaderboardRecordWrite("win_streak", loserId, undefined, 0, undefined, undefined);
-    nk.leaderboardRecordWrite("total_games", loserId, undefined, 1, undefined, undefined);
-    nk.leaderboardRecordWrite("score", loserId, undefined, SCORE_LOSS, undefined, undefined);
-    if (elapsedSec > 0) {
-      nk.leaderboardRecordWrite("time_played", loserId, undefined, elapsedSec, undefined, undefined);
-    }
-  } catch (e) {
-    logger.error("Failed to write loser leaderboard for %s: %s", loserId, e);
-  }
-}

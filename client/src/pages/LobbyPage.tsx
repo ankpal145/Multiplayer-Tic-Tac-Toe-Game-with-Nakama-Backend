@@ -14,8 +14,8 @@ export default function LobbyPage() {
   const [error, setError] = useState("");
   const [countdown, setCountdown] = useState(MATCH_TIMEOUT_SEC);
   const cancelledRef = useRef(false);
-  const retryTimerRef = useRef<ReturnType<typeof setTimeout>>();
-  const countdownRef = useRef<ReturnType<typeof setInterval>>();
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
   useEffect(() => {
     return () => {

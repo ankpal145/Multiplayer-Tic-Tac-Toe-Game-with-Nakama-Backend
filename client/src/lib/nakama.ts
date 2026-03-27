@@ -101,10 +101,19 @@ class NakamaClient {
     localStorage.setItem("nakama_user_id", this.session.user_id!);
 
     if (displayName && displayName.trim()) {
-      await this.client.updateAccount(this.session, {
-        display_name: displayName.trim(),
-        username: displayName.trim().toLowerCase().replace(/[^a-z0-9_]/g, "_").slice(0, 20),
-      });
+      const name = displayName.trim();
+      const uid = this.session.user_id!.slice(0, 5);
+      const safeUsername = name.toLowerCase().replace(/[^a-z0-9_]/g, "_").slice(0, 14) + "_" + uid;
+      try {
+        await this.client.updateAccount(this.session, {
+          display_name: name,
+          username: safeUsername,
+        });
+      } catch {
+        try {
+          await this.client.updateAccount(this.session, { display_name: name });
+        } catch { /* display_name might already be set */ }
+      }
     }
 
     this.socket = this.client.createSocket(NAKAMA_USE_SSL, false);

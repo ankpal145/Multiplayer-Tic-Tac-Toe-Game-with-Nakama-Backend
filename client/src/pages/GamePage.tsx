@@ -163,9 +163,25 @@ export default function GamePage() {
 
     nakamaClient.onMatchData(handleMatchData);
 
-    const passedMode = (location.state as any)?.mode;
-    if (passedMode) {
-      setGame((prev) => ({ ...prev, mode: passedMode }));
+    const startData = (location.state as any)?.startData;
+    if (startData) {
+      const userId = nakamaClient.userId!;
+      setGame((prev) => ({
+        ...prev,
+        board: startData.board,
+        myMark: startData.marks[userId] || 0,
+        activePlayer: startData.activePlayer,
+        mode: startData.mode,
+        turnDeadline: startData.turnDeadline || 0,
+        started: true,
+        waitingForOpponent: false,
+        playerNames: startData.playerNames || {},
+      }));
+    } else {
+      const passedMode = (location.state as any)?.mode;
+      if (passedMode) {
+        setGame((prev) => ({ ...prev, mode: passedMode }));
+      }
     }
 
     return () => {

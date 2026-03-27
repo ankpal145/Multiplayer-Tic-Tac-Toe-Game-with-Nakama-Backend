@@ -1,11 +1,11 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import nakamaClient from "../lib/nakama.ts";
+import type { MatchData } from "@heroiclabs/nakama-js";
+import nakamaClient, { OpCode } from "../lib/nakama.ts";
 
 type GameMode = "classic" | "timed";
 
 const MATCH_TIMEOUT_SEC = 30;
-const RETRY_DELAY_MS = 3000;
 
 export default function LobbyPage() {
   const navigate = useNavigate();
@@ -14,12 +14,10 @@ export default function LobbyPage() {
   const [error, setError] = useState("");
   const [countdown, setCountdown] = useState(MATCH_TIMEOUT_SEC);
   const cancelledRef = useRef(false);
-  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const countdownRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
   useEffect(() => {
     return () => {
-      clearTimeout(retryTimerRef.current);
       clearInterval(countdownRef.current);
     };
   }, []);
@@ -34,6 +32,10 @@ export default function LobbyPage() {
       setCountdown((prev) => {
         if (prev <= 1) {
           clearInterval(countdownRef.current);
+          cancelledRef.current = true;
+          nakamaClient.leaveMatch();
+          setSearching(false);
+          setError("No opponent found within 30 seconds. Please try again.");
           return 0;
         }
         return prev - 1;
@@ -45,30 +47,50 @@ export default function LobbyPage() {
         await nakamaClient.authenticate();
       }
 
-      const maxRetries = Math.floor(MATCH_TIMEOUT_SEC / (RETRY_DELAY_MS / 1000));
-
-      for (let attempt = 0; attempt < maxRetries; attempt++) {
+      nakamaClient.onMatchData((matchData: MatchData) => {
         if (cancelledRef.current) return;
 
+        const decoder = new TextDecoder();
+        let payload: string;
+        if (matchData.data instanceof Uint8Array) {
+          payload = decoder.decode(matchData.data);
+        } else if (typeof matchData.data === "string") {
+          payload = matchData.data;
+        } else {
+          return;
+        }
+
+        let parsed: any;
+        try {
+          parsed = JSON.parse(payload);
+        } catch {
+          return;
+        }
+
+        if (matchData.op_code === OpCode.START) {
+          clearInterval(countdownRef.current);
+          navigate("/game", { state: { mode, startData: parsed } });
+        }
+      });
+
+      let joined = false;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (cancelledRef.current) break;
         try {
           await nakamaClient.leaveMatch();
           await nakamaClient.findMatch(mode);
-          if (cancelledRef.current) return;
-          clearInterval(countdownRef.current);
-          navigate("/game", { state: { mode } });
-          return;
+          joined = true;
+          break;
         } catch {
-          if (attempt < maxRetries - 1 && !cancelledRef.current) {
-            await new Promise<void>((resolve) => {
-              retryTimerRef.current = setTimeout(resolve, RETRY_DELAY_MS);
-            });
+          if (attempt < 2 && !cancelledRef.current) {
+            await new Promise<void>((r) => setTimeout(r, 2000));
           }
         }
       }
 
-      if (!cancelledRef.current) {
+      if (!joined && !cancelledRef.current) {
         clearInterval(countdownRef.current);
-        setError("No opponent found within 30 seconds. Please try again.");
+        setError("Failed to connect to a match. Please try again.");
         setSearching(false);
       }
     } catch (err) {
@@ -82,7 +104,6 @@ export default function LobbyPage() {
 
   function cancelSearch() {
     cancelledRef.current = true;
-    clearTimeout(retryTimerRef.current);
     clearInterval(countdownRef.current);
     nakamaClient.leaveMatch();
     setSearching(false);

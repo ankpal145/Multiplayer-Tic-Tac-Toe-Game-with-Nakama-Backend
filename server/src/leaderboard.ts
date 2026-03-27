@@ -64,8 +64,8 @@ export function rpcGetLeaderboard(
     const accounts = nk.accountsGetId(playerIds);
     if (accounts) {
       for (const acc of accounts) {
-        if (acc.user) {
-          nameMap[acc.user.id] = acc.user.displayName || acc.user.username || "Player";
+        if (acc.user && acc.user.userId) {
+          nameMap[acc.user.userId] = acc.user.displayName || acc.user.username || "Player";
         }
       }
     }

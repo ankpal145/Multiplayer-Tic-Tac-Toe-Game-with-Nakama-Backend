@@ -238,8 +238,8 @@ export const matchJoin: nkruntime.MatchJoinFunction = function (
       const accounts = nk.accountsGetId(s.playerOrder);
       if (accounts) {
         for (const acc of accounts) {
-          if (acc.user) {
-            playerNames[acc.user.id] = acc.user.displayName || acc.user.username || "Player";
+          if (acc.user && acc.user.userId) {
+            playerNames[acc.user.userId] = acc.user.displayName || acc.user.username || "Player";
           }
         }
       }

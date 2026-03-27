@@ -34,6 +34,7 @@ export interface DoneMessage {
   winner: number;
   winnerUserId: string;
   reason: string;
+  pointsAwarded: Record<string, number>;
 }
 
 export interface TimerMessage {
@@ -53,6 +54,8 @@ export interface LeaderboardEntry {
   draws: number;
   totalGames: number;
   winStreak: number;
+  score: number;
+  timePlayed: number;
 }
 
 export interface LeaderboardResponse {

@@ -2,6 +2,15 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import nakamaClient, { type LeaderboardEntry } from "../lib/nakama.ts";
 
+function formatTime(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  const mins = Math.floor(seconds / 60);
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  return remMins > 0 ? `${hours}h${remMins}m` : `${hours}h`;
+}
+
 export default function LeaderboardPage() {
   const navigate = useNavigate();
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
@@ -30,7 +39,6 @@ export default function LeaderboardPage() {
   return (
     <div className="min-h-dvh flex flex-col items-center px-4 py-8">
       <div className="max-w-lg w-full">
-        {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <button
             onClick={() => navigate("/")}
@@ -72,14 +80,12 @@ export default function LeaderboardPage() {
 
         {!loading && !error && entries.length > 0 && (
           <div className="bg-gray-900/80 backdrop-blur border border-gray-800 rounded-2xl overflow-hidden shadow-xl">
-            <div className="grid grid-cols-[2.5rem_1fr_3rem_3rem_3rem_3.5rem_3rem] gap-1 px-3 py-3 bg-gray-800/50 text-[10px] text-gray-500 uppercase tracking-wider font-semibold">
+            <div className="grid grid-cols-[2.5rem_1fr_5.5rem_3rem_4rem] gap-1 px-3 py-3 bg-gray-800/50 text-[10px] text-gray-500 uppercase tracking-wider font-semibold">
               <div className="text-center">#</div>
               <div>Player</div>
-              <div className="text-center">W</div>
-              <div className="text-center">L</div>
-              <div className="text-center">D</div>
-              <div className="text-center">Total</div>
-              <div className="text-center">Str</div>
+              <div className="text-center">W/L/D</div>
+              <div className="text-center">Time</div>
+              <div className="text-center">Score</div>
             </div>
 
             {entries.map((entry) => {
@@ -87,7 +93,7 @@ export default function LeaderboardPage() {
               return (
                 <div
                   key={entry.userId}
-                  className={`grid grid-cols-[2.5rem_1fr_3rem_3rem_3rem_3.5rem_3rem] gap-1 px-3 py-3 border-t border-gray-800/50 items-center transition ${
+                  className={`grid grid-cols-[2.5rem_1fr_5.5rem_3rem_4rem] gap-1 px-3 py-3 border-t border-gray-800/50 items-center transition ${
                     isMe ? "bg-blue-500/5" : "hover:bg-gray-800/30"
                   }`}
                 >
@@ -107,11 +113,15 @@ export default function LeaderboardPage() {
                       </span>
                     )}
                   </div>
-                  <div className="text-center text-green-400 font-semibold text-sm">{entry.wins}</div>
-                  <div className="text-center text-red-400 font-semibold text-sm">{entry.losses}</div>
-                  <div className="text-center text-gray-400 font-semibold text-sm">{entry.draws}</div>
-                  <div className="text-center text-purple-400 font-semibold text-sm">{entry.totalGames}</div>
-                  <div className="text-center text-yellow-400 font-semibold text-sm">{entry.winStreak}</div>
+                  <div className="text-center text-sm">
+                    <span className="text-green-400">{entry.wins}</span>
+                    <span className="text-gray-600">/</span>
+                    <span className="text-red-400">{entry.losses}</span>
+                    <span className="text-gray-600">/</span>
+                    <span className="text-gray-400">{entry.draws}</span>
+                  </div>
+                  <div className="text-center text-gray-400 text-xs">{formatTime(entry.timePlayed)}</div>
+                  <div className="text-center text-yellow-400 font-bold text-sm">{entry.score}</div>
                 </div>
               );
             })}

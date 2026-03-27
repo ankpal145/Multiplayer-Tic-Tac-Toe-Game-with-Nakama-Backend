@@ -149,12 +149,14 @@ export default function LobbyPage() {
         ) : (
           <div className="bg-gray-900/80 backdrop-blur border border-gray-800 rounded-2xl p-12 shadow-xl text-center">
             <div className="w-16 h-16 mx-auto mb-6 border-4 border-blue-500 border-t-transparent rounded-full animate-spin-slow" />
-            <h2 className="text-xl font-bold mb-2">Searching for opponent...</h2>
+            <h2 className="text-xl font-bold mb-2">Finding a random player...</h2>
             <p className="text-gray-400 text-sm mb-2">
-              Mode: <span className="capitalize text-white">{mode}</span>
-              {mode === "timed" && " (30s per turn)"}
+              It usually takes {countdown} seconds.
             </p>
-            <p className={`text-2xl font-bold mb-6 ${countdown <= 10 ? "text-red-400" : "text-blue-400"}`}>
+            <p className="text-gray-500 text-xs mb-1 capitalize">
+              Mode: {mode}{mode === "timed" && " (30s per turn)"}
+            </p>
+            <p className={`text-3xl font-bold mb-6 tabular-nums ${countdown <= 10 ? "text-red-400" : "text-blue-400"}`}>
               {countdown}s
             </p>
             <button

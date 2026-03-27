@@ -42,6 +42,7 @@ interface GameState {
   started: boolean;
   waitingForOpponent: boolean;
   playerNames: Record<string, string>;
+  pointsAwarded: number;
 }
 
 const initialGameState: GameState = {
@@ -57,6 +58,7 @@ const initialGameState: GameState = {
   started: false,
   waitingForOpponent: true,
   playerNames: {},
+  pointsAwarded: 0,
 };
 
 export default function GamePage() {
@@ -122,6 +124,8 @@ export default function GamePage() {
         }
         case OpCode.DONE: {
           const msg = parsed as DoneMessage;
+          const uid = nakamaClient.userId!;
+          const pts = msg.pointsAwarded?.[uid] ?? 0;
           setGame((prev) => ({
             ...prev,
             board: msg.board,
@@ -129,6 +133,7 @@ export default function GamePage() {
             winner: msg.winner,
             winnerUserId: msg.winnerUserId,
             reason: msg.reason,
+            pointsAwarded: pts,
           }));
           break;
         }
@@ -224,13 +229,19 @@ export default function GamePage() {
           <div className="flex items-center justify-between mb-5 px-3 py-3 bg-gray-900/80 border border-gray-800 rounded-xl">
             <div className={`flex items-center gap-2 ${isMyTurn ? "opacity-100" : "opacity-50"}`}>
               <span className="font-bold text-lg text-blue-400">{game.myMark === 1 ? "X" : "O"}</span>
-              <span className="text-sm text-white font-medium truncate max-w-[100px]">{myName}</span>
+              <div className="flex flex-col">
+                <span className="text-sm text-white font-medium truncate max-w-[100px]">{myName}</span>
+                <span className="text-[10px] text-green-400">(you)</span>
+              </div>
               {isMyTurn && <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />}
             </div>
             <span className="text-gray-600 text-xs font-bold">VS</span>
             <div className={`flex items-center gap-2 ${!isMyTurn && !game.gameOver ? "opacity-100" : "opacity-50"}`}>
               {!isMyTurn && !game.gameOver && <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />}
-              <span className="text-sm text-white font-medium truncate max-w-[100px]">{opponentName}</span>
+              <div className="flex flex-col items-end">
+                <span className="text-sm text-white font-medium truncate max-w-[100px]">{opponentName}</span>
+                <span className="text-[10px] text-red-400">(opp)</span>
+              </div>
               <span className="font-bold text-lg text-red-400">{game.myMark === 1 ? "O" : "X"}</span>
             </div>
           </div>
@@ -297,6 +308,7 @@ export default function GamePage() {
             myUserId={myUserId}
             myMark={game.myMark}
             reason={game.reason}
+            pointsAwarded={game.pointsAwarded}
             onPlayAgain={handlePlayAgain}
             onHome={handleGoHome}
           />

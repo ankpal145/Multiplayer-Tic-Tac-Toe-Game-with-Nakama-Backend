@@ -78,12 +78,12 @@ export default function AuthPage() {
         <div className="bg-gray-900/80 backdrop-blur border border-gray-800 rounded-2xl p-8 shadow-xl">
           {status === "name_entry" && (
             <form onSubmit={handleNameSubmit} className="flex flex-col items-center gap-5">
-              <h2 className="text-xl font-bold text-white">Enter Your Name</h2>
+              <h2 className="text-xl font-bold text-white">Who are you?</h2>
               <input
                 type="text"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="Your display name"
+                placeholder="Nickname"
                 maxLength={20}
                 autoFocus
                 className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-white text-center text-lg placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition"

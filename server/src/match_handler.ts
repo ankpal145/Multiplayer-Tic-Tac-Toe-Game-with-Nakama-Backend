@@ -15,6 +15,10 @@ const WINNING_LINES = [
 
 const TURN_TIME_LIMIT_SEC = 30;
 
+const SCORE_WIN = 200;
+const SCORE_DRAW = 100;
+const SCORE_LOSS = 0;
+
 interface MatchState {
   board: number[];
   marks: { [userId: string]: number };
@@ -27,6 +31,7 @@ interface MatchState {
   moveCount: number;
   playerOrder: string[];
   label: MatchLabel;
+  startedAt: number;
 }
 
 interface MatchLabel {
@@ -69,6 +74,7 @@ export const matchInit: nkruntime.MatchInitFunction = function (
     moveCount: 0,
     playerOrder: [],
     label,
+    startedAt: 0,
   };
 
   const tickRate = mode === "timed" ? 10 : 5;
@@ -139,6 +145,8 @@ export const matchJoin: nkruntime.MatchJoinFunction = function (
     s.label.open = 0;
     dispatcher.matchLabelUpdate(JSON.stringify(s.label));
 
+    s.startedAt = Math.floor(Date.now() / 1000);
+
     if (s.mode === "timed") {
       s.turnDeadline = Math.floor(Date.now() / 1000) + TURN_TIME_LIMIT_SEC;
     }
@@ -205,10 +213,12 @@ export const matchLeave: nkruntime.MatchLeaveFunction = function (
       winner: s.winner,
       winnerUserId: winnerId,
       reason: "opponent_left",
+      pointsAwarded: { [winnerId]: SCORE_WIN, [loserId]: SCORE_LOSS },
     };
     dispatcher.broadcastMessage(OpCode.DONE, JSON.stringify(doneMsg));
 
-    writeGameResult(nk, logger, winnerId, loserId);
+    const elapsed = s.startedAt > 0 ? Math.floor(Date.now() / 1000) - s.startedAt : 0;
+    writeGameResult(nk, logger, winnerId, loserId, elapsed);
   }
 
   if (remainingPlayers.length === 0) {
@@ -260,10 +270,12 @@ export const matchLoop: nkruntime.MatchLoopFunction = function (
         winner: s.winner,
         winnerUserId: winnerId,
         reason: "timeout",
+        pointsAwarded: { [winnerId]: SCORE_WIN, [loserId]: SCORE_LOSS },
       };
       dispatcher.broadcastMessage(OpCode.DONE, JSON.stringify(doneMsg));
 
-      writeGameResult(nk, logger, winnerId, loserId);
+      const elapsed = s.startedAt > 0 ? Math.floor(Date.now() / 1000) - s.startedAt : 0;
+      writeGameResult(nk, logger, winnerId, loserId, elapsed);
 
       return { state: s };
     }
@@ -321,10 +333,12 @@ export const matchLoop: nkruntime.MatchLoopFunction = function (
         winner: s.winner,
         winnerUserId: winnerId,
         reason: "win",
+        pointsAwarded: { [winnerId]: SCORE_WIN, [loserId]: SCORE_LOSS },
       };
       dispatcher.broadcastMessage(OpCode.DONE, JSON.stringify(doneMsg));
 
-      writeGameResult(nk, logger, winnerId, loserId);
+      const elapsed = s.startedAt > 0 ? Math.floor(Date.now() / 1000) - s.startedAt : 0;
+      writeGameResult(nk, logger, winnerId, loserId, elapsed);
 
       return { state: s };
     }
@@ -333,19 +347,28 @@ export const matchLoop: nkruntime.MatchLoopFunction = function (
       s.winner = 3;
       s.gameOver = true;
 
+      const pointsAwarded: { [id: string]: number } = {};
+      for (const pid of s.playerOrder) pointsAwarded[pid] = SCORE_DRAW;
+
       const doneMsg = {
         board: s.board,
         winner: 3,
         winnerUserId: "",
         reason: "draw",
+        pointsAwarded,
       };
       dispatcher.broadcastMessage(OpCode.DONE, JSON.stringify(doneMsg));
 
+      const elapsed = s.startedAt > 0 ? Math.floor(Date.now() / 1000) - s.startedAt : 0;
       for (const playerId of s.playerOrder) {
         try {
           nk.leaderboardRecordWrite("draws", playerId, undefined, 1, undefined, undefined);
           nk.leaderboardRecordWrite("total_games", playerId, undefined, 1, undefined, undefined);
+          nk.leaderboardRecordWrite("score", playerId, undefined, SCORE_DRAW, undefined, undefined);
           nk.leaderboardRecordWrite("win_streak", playerId, undefined, 0, undefined, undefined);
+          if (elapsed > 0) {
+            nk.leaderboardRecordWrite("time_played", playerId, undefined, elapsed, undefined, undefined);
+          }
         } catch (e) {
           logger.error("Failed to write draw stats for %s: %s", playerId, e);
         }
@@ -413,12 +436,17 @@ function writeGameResult(
   nk: nkruntime.Nakama,
   logger: nkruntime.Logger,
   winnerId: string,
-  loserId: string
+  loserId: string,
+  elapsedSec: number
 ) {
   try {
     nk.leaderboardRecordWrite("wins", winnerId, undefined, 1, undefined, undefined);
     nk.leaderboardRecordWrite("win_streak", winnerId, undefined, 1, undefined, undefined);
     nk.leaderboardRecordWrite("total_games", winnerId, undefined, 1, undefined, undefined);
+    nk.leaderboardRecordWrite("score", winnerId, undefined, SCORE_WIN, undefined, undefined);
+    if (elapsedSec > 0) {
+      nk.leaderboardRecordWrite("time_played", winnerId, undefined, elapsedSec, undefined, undefined);
+    }
   } catch (e) {
     logger.error("Failed to write winner leaderboard for %s: %s", winnerId, e);
   }
@@ -427,6 +455,10 @@ function writeGameResult(
     nk.leaderboardRecordWrite("losses", loserId, undefined, 1, undefined, undefined);
     nk.leaderboardRecordWrite("win_streak", loserId, undefined, 0, undefined, undefined);
     nk.leaderboardRecordWrite("total_games", loserId, undefined, 1, undefined, undefined);
+    nk.leaderboardRecordWrite("score", loserId, undefined, SCORE_LOSS, undefined, undefined);
+    if (elapsedSec > 0) {
+      nk.leaderboardRecordWrite("time_played", loserId, undefined, elapsedSec, undefined, undefined);
+    }
   } catch (e) {
     logger.error("Failed to write loser leaderboard for %s: %s", loserId, e);
   }

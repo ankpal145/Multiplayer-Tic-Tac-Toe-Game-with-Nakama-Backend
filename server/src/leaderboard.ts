@@ -1,18 +1,12 @@
 export function setupLeaderboards(nk: nkruntime.Nakama, logger: nkruntime.Logger) {
   nk.leaderboardCreate("wins", false, "descending" as nkruntime.SortOrder, "increment" as nkruntime.Operator);
-  logger.info("Leaderboard 'wins' created");
-
   nk.leaderboardCreate("losses", false, "ascending" as nkruntime.SortOrder, "increment" as nkruntime.Operator);
-  logger.info("Leaderboard 'losses' created");
-
   nk.leaderboardCreate("draws", false, "descending" as nkruntime.SortOrder, "increment" as nkruntime.Operator);
-  logger.info("Leaderboard 'draws' created");
-
   nk.leaderboardCreate("total_games", false, "descending" as nkruntime.SortOrder, "increment" as nkruntime.Operator);
-  logger.info("Leaderboard 'total_games' created");
-
   nk.leaderboardCreate("win_streak", false, "descending" as nkruntime.SortOrder, "best" as nkruntime.Operator);
-  logger.info("Leaderboard 'win_streak' created");
+  nk.leaderboardCreate("score", false, "descending" as nkruntime.SortOrder, "increment" as nkruntime.Operator);
+  nk.leaderboardCreate("time_played", false, "descending" as nkruntime.SortOrder, "increment" as nkruntime.Operator);
+  logger.info("All leaderboards initialized");
 }
 
 export function rpcGetLeaderboard(
@@ -32,74 +26,49 @@ export function rpcGetLeaderboard(
 
   const limit = request.limit || 20;
 
-  const totalRecords = nk.leaderboardRecordsList("total_games", undefined, limit, request.cursor);
+  const scoreRecords = nk.leaderboardRecordsList("score", undefined, limit, request.cursor);
 
   const playerIds: string[] = [];
-  if (totalRecords.records) {
-    for (const record of totalRecords.records) {
+  if (scoreRecords.records) {
+    for (const record of scoreRecords.records) {
       if (record.ownerId && playerIds.indexOf(record.ownerId) === -1) {
         playerIds.push(record.ownerId);
       }
     }
   }
 
+  const scoreMap: { [id: string]: number } = {};
   const winsMap: { [id: string]: number } = {};
   const lossesMap: { [id: string]: number } = {};
   const drawsMap: { [id: string]: number } = {};
   const streakMap: { [id: string]: number } = {};
+  const timeMap: { [id: string]: number } = {};
   const usernameMap: { [id: string]: string } = {};
 
-  if (totalRecords.records) {
-    for (const r of totalRecords.records) {
+  if (scoreRecords.records) {
+    for (const r of scoreRecords.records) {
       if (r.ownerId) {
+        scoreMap[r.ownerId] = Number(r.score);
         usernameMap[r.ownerId] = r.username || "";
       }
     }
   }
 
   if (playerIds.length > 0) {
-    try {
-      const records = nk.leaderboardRecordsList("wins", playerIds, playerIds.length);
-      if (records.records) {
-        for (const r of records.records) {
-          if (r.ownerId) winsMap[r.ownerId] = Number(r.score);
-        }
-      }
-    } catch (e) {
-      logger.warn("Could not fetch wins: %s", e);
-    }
+    const boards = ["wins", "losses", "draws", "win_streak", "time_played"];
+    const maps = [winsMap, lossesMap, drawsMap, streakMap, timeMap];
 
-    try {
-      const records = nk.leaderboardRecordsList("losses", playerIds, playerIds.length);
-      if (records.records) {
-        for (const r of records.records) {
-          if (r.ownerId) lossesMap[r.ownerId] = Number(r.score);
+    for (let i = 0; i < boards.length; i++) {
+      try {
+        const records = nk.leaderboardRecordsList(boards[i], playerIds, playerIds.length);
+        if (records.records) {
+          for (const r of records.records) {
+            if (r.ownerId) maps[i][r.ownerId] = Number(r.score);
+          }
         }
+      } catch (e) {
+        logger.warn("Could not fetch %s: %s", boards[i], e);
       }
-    } catch (e) {
-      logger.warn("Could not fetch losses: %s", e);
-    }
-
-    try {
-      const records = nk.leaderboardRecordsList("draws", playerIds, playerIds.length);
-      if (records.records) {
-        for (const r of records.records) {
-          if (r.ownerId) drawsMap[r.ownerId] = Number(r.score);
-        }
-      }
-    } catch (e) {
-      logger.warn("Could not fetch draws: %s", e);
-    }
-
-    try {
-      const records = nk.leaderboardRecordsList("win_streak", playerIds, playerIds.length);
-      if (records.records) {
-        for (const r of records.records) {
-          if (r.ownerId) streakMap[r.ownerId] = Number(r.score);
-        }
-      }
-    } catch (e) {
-      logger.warn("Could not fetch streaks: %s", e);
     }
   }
 
@@ -118,12 +87,14 @@ export function rpcGetLeaderboard(
       draws,
       totalGames: wins + losses + draws,
       winStreak: streakMap[id] || 0,
+      score: scoreMap[id] || 0,
+      timePlayed: timeMap[id] || 0,
     });
   }
 
   return JSON.stringify({
     entries,
-    nextCursor: totalRecords.nextCursor || null,
-    prevCursor: totalRecords.prevCursor || null,
+    nextCursor: scoreRecords.nextCursor || null,
+    prevCursor: scoreRecords.prevCursor || null,
   });
 }

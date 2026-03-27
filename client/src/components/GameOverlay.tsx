@@ -4,6 +4,7 @@ interface GameOverlayProps {
   myUserId: string;
   myMark: number;
   reason: string;
+  pointsAwarded: number;
   onPlayAgain: () => void;
   onHome: () => void;
 }
@@ -13,6 +14,7 @@ export default function GameOverlay({
   winnerUserId,
   myUserId,
   reason,
+  pointsAwarded,
   onPlayAgain,
   onHome,
 }: GameOverlayProps) {
@@ -28,7 +30,7 @@ export default function GameOverlay({
     subtitle = "Well matched game";
     bgGradient = "from-gray-600/20 to-gray-800/20";
   } else if (iWon) {
-    title = "You Win!";
+    title = "WINNER!";
     subtitle =
       reason === "opponent_left"
         ? "Opponent disconnected"
@@ -54,7 +56,14 @@ export default function GameOverlay({
           {isDraw ? "🤝" : iWon ? "🏆" : "😔"}
         </div>
 
-        <h2 className="text-3xl font-black mb-2">{title}</h2>
+        <h2 className="text-3xl font-black mb-1">{title}</h2>
+
+        {pointsAwarded > 0 && (
+          <p className={`text-lg font-bold mb-2 ${iWon ? "text-green-400" : isDraw ? "text-yellow-400" : "text-gray-400"}`}>
+            +{pointsAwarded} pts
+          </p>
+        )}
+
         <p className="text-gray-400 mb-8">{subtitle}</p>
 
         <div className="flex flex-col gap-3">

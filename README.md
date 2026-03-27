@@ -2,19 +2,29 @@
 
 A production-ready, real-time multiplayer Tic-Tac-Toe game with **server-authoritative architecture** using [Nakama](https://heroiclabs.com/nakama/) as the backend and **React + Vite + Tailwind CSS** for the frontend.
 
+## Live Demo
+
+| | URL |
+|---|---|
+| **Game** | [https://multiplayer-tic-tac-toe-game-with-n.vercel.app](https://multiplayer-tic-tac-toe-game-with-n.vercel.app) |
+| **Nakama Server** | [https://tictactoe-nakama.duckdns.org](https://tictactoe-nakama.duckdns.org) |
+| **Nakama Admin Console** | [http://68.233.103.226:7351](http://68.233.103.226:7351) (login: `admin` / `password`) |
+
+Open the game URL in **two browser tabs** (or two devices) to test multiplayer.
+
 ## Architecture
 
 ```
-┌─────────────────────────┐         ┌───────────────────────────────────┐
-│   React + Vite Client   │  WS/HTTP│      Nakama Server (Docker)       │
-│                         │◄────────►                                   │
-│  • Auth Screen          │         │  • Device Authentication          │
-│  • Lobby / Matchmaking  │ :7350   │  • Match Handler (TS Runtime)     │
-│  • Game Board           │         │  • find_match RPC                 │
-│  • Leaderboard          │         │  • Leaderboard API                │
-│  • Timer (timed mode)   │         │  • CockroachDB (persistence)      │
-└─────────────────────────┘         └───────────────────────────────────┘
-      Vercel / Static                     DigitalOcean Droplet
+┌─────────────────────────┐  WSS/  ┌───────────────────────────────────┐
+│   React + Vite Client   │  HTTPS │      Nakama Server (Docker)       │
+│                         │◄──────►│                                   │
+│  • Auth Screen          │        │  • Device Authentication          │
+│  • Lobby / Matchmaking  │ Caddy  │  • Match Handler (TS Runtime)     │
+│  • Game Board           │  TLS   │  • find_match RPC                 │
+│  • Leaderboard          │        │  • Leaderboard API                │
+│  • Timer (timed mode)   │        │  • CockroachDB (persistence)      │
+└─────────────────────────┘        └───────────────────────────────────┘
+      Vercel (HTTPS)              Oracle Cloud VM + Caddy reverse proxy
 ```
 
 ### How It Works
@@ -175,7 +185,7 @@ Communication between client and server uses numeric operation codes:
 |---------|-------|-------------|
 | Image | `nakama:3.24.2` | Nakama server version |
 | Database | CockroachDB 23.1 | Persistent storage |
-| Logger level | DEBUG | Full logging for development |
+| Logger level | INFO (production) / DEBUG (dev) | Log verbosity |
 | Session token expiry | 7200s (2h) | JWT session lifetime |
 | Socket server key | `defaultkey` | Client authentication key |
 | Modules path | `/nakama/data/modules` | Mounted from `server/build/` |
@@ -191,68 +201,81 @@ Communication between client and server uses numeric operation codes:
 
 ## Deployment
 
-### Nakama Server on DigitalOcean
+The game is currently deployed on **Oracle Cloud** (Nakama backend) and **Vercel** (frontend).
 
-#### 1. Create a Droplet
+### Current Production Setup
 
-- **Image:** Ubuntu 24.04
-- **Size:** 2 vCPU / 2 GB RAM (Basic Droplet, ~$18/mo)
-- **Region:** Choose closest to your users
+| Component | Platform | URL |
+|-----------|----------|-----|
+| Frontend | Vercel | [multiplayer-tic-tac-toe-game-with-n.vercel.app](https://multiplayer-tic-tac-toe-game-with-n.vercel.app) |
+| Nakama API | Oracle Cloud + Caddy | [tictactoe-nakama.duckdns.org](https://tictactoe-nakama.duckdns.org) |
+| Admin Console | Oracle Cloud | [68.233.103.226:7351](http://68.233.103.226:7351) |
 
-#### 2. Install Docker
+### Nakama Server (Cloud VM)
+
+Any cloud provider with Docker support works. The current setup uses Oracle Cloud Always Free Tier (Ubuntu 24.04).
+
+#### 1. Provision a VM and install Docker
 
 ```bash
-ssh root@YOUR_DROPLET_IP
+ssh ubuntu@YOUR_SERVER_IP
 
-# Install Docker
 curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+```
 
-# Install Docker Compose plugin
-apt-get install -y docker-compose-plugin
+#### 2. (Recommended) Add swap on low-memory VMs
+
+```bash
+sudo fallocate -l 2G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 ```
 
 #### 3. Deploy Nakama
 
 ```bash
-# Create project directory
-mkdir -p /opt/nakama/server/build
+mkdir -p ~/nakama/server/build
 
-# Copy files to the droplet (run from your local machine)
-scp docker-compose.yml root@YOUR_DROPLET_IP:/opt/nakama/
-scp server/build/index.js root@YOUR_DROPLET_IP:/opt/nakama/server/build/
-```
+# From your local machine:
+scp docker-compose.yml ubuntu@YOUR_SERVER_IP:~/nakama/
+scp server/build/index.js ubuntu@YOUR_SERVER_IP:~/nakama/server/build/
 
-#### 4. Configure for production
-
-On the droplet, edit `/opt/nakama/docker-compose.yml`:
-
-- Change `--socket.server_key "defaultkey"` to a strong random key
-- Change `--logger.level DEBUG` to `--logger.level INFO`
-- Add `restart: always` to both services
-
-```bash
-cd /opt/nakama
+# On the server:
+cd ~/nakama
 docker compose up -d
 ```
 
-#### 5. Configure firewall
+#### 4. HTTPS with Caddy (required for Vercel frontend)
+
+Since Vercel serves over HTTPS, the Nakama API must also use HTTPS to avoid mixed-content errors. [Caddy](https://caddyserver.com/) handles this automatically with free Let's Encrypt certificates.
 
 ```bash
-ufw allow 7350/tcp   # Nakama API/WebSocket
-ufw allow 7351/tcp   # Admin console (restrict to your IP in production)
-ufw enable
+sudo apt-get install -y caddy
+
+echo 'your-domain.example.com {
+    reverse_proxy localhost:7350
+}' | sudo tee /etc/caddy/Caddyfile
+
+sudo systemctl restart caddy
 ```
 
-#### 6. (Optional) HTTPS with Nginx
+A free domain from [DuckDNS](https://www.duckdns.org) works well for this.
 
-For production, set up Nginx as a reverse proxy with Let's Encrypt:
+#### 5. Open firewall ports
 
 ```bash
-apt install -y nginx certbot python3-certbot-nginx
-
-# Configure Nginx to proxy /nakama to localhost:7350
-# Then: certbot --nginx -d your-domain.com
+# OS firewall
+sudo iptables -I INPUT -p tcp --dport 80 -j ACCEPT
+sudo iptables -I INPUT -p tcp --dport 443 -j ACCEPT
+sudo iptables -I INPUT -p tcp --dport 7350 -j ACCEPT
+sudo iptables -I INPUT -p tcp --dport 7351 -j ACCEPT
+sudo netfilter-persistent save
 ```
+
+Also open ports 80, 443, 7350, and 7351 in your cloud provider's security group / firewall rules.
 
 ### Frontend on Vercel
 
@@ -270,10 +293,10 @@ Go to [vercel.com](https://vercel.com), import the GitHub repository.
 
 | Variable | Value |
 |----------|-------|
-| `VITE_NAKAMA_HOST` | Your Droplet IP or domain |
-| `VITE_NAKAMA_PORT` | `7350` |
-| `VITE_NAKAMA_USE_SSL` | `true` (if using HTTPS) or `false` |
-| `VITE_NAKAMA_KEY` | Your server key |
+| `VITE_NAKAMA_HOST` | Your Caddy domain (e.g. `tictactoe-nakama.duckdns.org`) |
+| `VITE_NAKAMA_PORT` | `443` |
+| `VITE_NAKAMA_USE_SSL` | `true` |
+| `VITE_NAKAMA_KEY` | `defaultkey` |
 
 #### 4. Deploy
 

@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "es2020",
+    "typeRoots": ["./node_modules"],
+    "outFile": "./build/index.js",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "files": [
+    "./src/main.ts",
+    "./src/match_handler.ts",
+    "./src/match_rpc.ts",
+    "./src/leaderboard.ts"
+  ],
+  "exclude": ["node_modules", "build"]
+}

@@ -1,0 +1,20 @@
+node_modules/
+dist/
+build/
+.env
+.env.local
+.env.production
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Server build output
+server/build/
+
+# Client build output
+client/dist/
+
+# Docker volumes
+data/

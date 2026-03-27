@@ -4,29 +4,47 @@ import nakamaClient from "../lib/nakama.ts";
 
 export default function AuthPage() {
   const navigate = useNavigate();
-  const [status, setStatus] = useState<"idle" | "connecting" | "connected" | "error">("idle");
+  const [status, setStatus] = useState<"idle" | "name_entry" | "connecting" | "connected" | "error">("idle");
+  const [displayName, setDisplayName] = useState<string>("");
   const [username, setUsername] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
 
   useEffect(() => {
     if (nakamaClient.isConnected) {
-      setUsername(nakamaClient.username);
+      setUsername(nakamaClient.displayName || nakamaClient.username);
       setStatus("connected");
       return;
     }
 
+    const savedName = localStorage.getItem("nakama_display_name");
+    if (savedName) {
+      setDisplayName(savedName);
+      connectWithName(savedName);
+    } else {
+      setStatus("name_entry");
+    }
+  }, []);
+
+  function connectWithName(name: string) {
     setStatus("connecting");
+    localStorage.setItem("nakama_display_name", name);
     nakamaClient
-      .authenticate()
-      .then((session) => {
-        setUsername(session.username || "Player");
+      .authenticate(name)
+      .then(() => {
+        setUsername(name);
         setStatus("connected");
       })
       .catch((err) => {
         setErrorMsg(err instanceof Error ? err.message : "Connection failed");
         setStatus("error");
       });
-  }, []);
+  }
+
+  function handleNameSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!displayName.trim()) return;
+    connectWithName(displayName.trim());
+  }
 
   return (
     <div className="min-h-dvh flex flex-col items-center justify-center px-4 relative overflow-hidden">
@@ -58,6 +76,28 @@ export default function AuthPage() {
 
         {/* Status Card */}
         <div className="bg-gray-900/80 backdrop-blur border border-gray-800 rounded-2xl p-8 shadow-xl">
+          {status === "name_entry" && (
+            <form onSubmit={handleNameSubmit} className="flex flex-col items-center gap-5">
+              <h2 className="text-xl font-bold text-white">Enter Your Name</h2>
+              <input
+                type="text"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="Your display name"
+                maxLength={20}
+                autoFocus
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-white text-center text-lg placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition"
+              />
+              <button
+                type="submit"
+                disabled={!displayName.trim()}
+                className="w-full py-4 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-lg rounded-xl transition-all duration-200 hover:shadow-lg hover:shadow-blue-500/25 active:scale-[0.98] cursor-pointer"
+              >
+                Continue
+              </button>
+            </form>
+          )}
+
           {status === "connecting" && (
             <div className="flex flex-col items-center gap-4">
               <div className="w-10 h-10 border-3 border-blue-500 border-t-transparent rounded-full animate-spin-slow" />

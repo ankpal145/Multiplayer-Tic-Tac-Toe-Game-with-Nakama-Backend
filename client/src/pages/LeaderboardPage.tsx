@@ -72,22 +72,22 @@ export default function LeaderboardPage() {
 
         {!loading && !error && entries.length > 0 && (
           <div className="bg-gray-900/80 backdrop-blur border border-gray-800 rounded-2xl overflow-hidden shadow-xl">
-            {/* Table Header */}
-            <div className="grid grid-cols-[3rem_1fr_4rem_4rem_4rem] gap-2 px-4 py-3 bg-gray-800/50 text-xs text-gray-500 uppercase tracking-wider font-semibold">
+            <div className="grid grid-cols-[2.5rem_1fr_3rem_3rem_3rem_3.5rem_3rem] gap-1 px-3 py-3 bg-gray-800/50 text-[10px] text-gray-500 uppercase tracking-wider font-semibold">
               <div className="text-center">#</div>
               <div>Player</div>
               <div className="text-center">W</div>
               <div className="text-center">L</div>
-              <div className="text-center">Streak</div>
+              <div className="text-center">D</div>
+              <div className="text-center">Total</div>
+              <div className="text-center">Str</div>
             </div>
 
-            {/* Table Rows */}
             {entries.map((entry) => {
               const isMe = entry.userId === myUserId;
               return (
                 <div
                   key={entry.userId}
-                  className={`grid grid-cols-[3rem_1fr_4rem_4rem_4rem] gap-2 px-4 py-3 border-t border-gray-800/50 items-center transition ${
+                  className={`grid grid-cols-[2.5rem_1fr_3rem_3rem_3rem_3.5rem_3rem] gap-1 px-3 py-3 border-t border-gray-800/50 items-center transition ${
                     isMe ? "bg-blue-500/5" : "hover:bg-gray-800/30"
                   }`}
                 >
@@ -97,19 +97,21 @@ export default function LeaderboardPage() {
                     {entry.rank === 3 && <span className="text-orange-400 text-lg">🥉</span>}
                     {entry.rank > 3 && <span className="text-gray-500 text-sm">{entry.rank}</span>}
                   </div>
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className={`truncate ${isMe ? "text-blue-400 font-semibold" : "text-white"}`}>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className={`truncate text-sm ${isMe ? "text-blue-400 font-semibold" : "text-white"}`}>
                       {entry.username || "Anonymous"}
                     </span>
                     {isMe && (
-                      <span className="shrink-0 text-[10px] bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded">
+                      <span className="shrink-0 text-[9px] bg-blue-500/20 text-blue-400 px-1 py-0.5 rounded">
                         YOU
                       </span>
                     )}
                   </div>
-                  <div className="text-center text-green-400 font-semibold">{entry.wins}</div>
-                  <div className="text-center text-red-400 font-semibold">{entry.losses}</div>
-                  <div className="text-center text-yellow-400 font-semibold">{entry.winStreak}</div>
+                  <div className="text-center text-green-400 font-semibold text-sm">{entry.wins}</div>
+                  <div className="text-center text-red-400 font-semibold text-sm">{entry.losses}</div>
+                  <div className="text-center text-gray-400 font-semibold text-sm">{entry.draws}</div>
+                  <div className="text-center text-purple-400 font-semibold text-sm">{entry.totalGames}</div>
+                  <div className="text-center text-yellow-400 font-semibold text-sm">{entry.winStreak}</div>
                 </div>
               );
             })}

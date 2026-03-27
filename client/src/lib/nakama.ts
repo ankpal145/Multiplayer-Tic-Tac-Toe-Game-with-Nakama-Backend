@@ -20,6 +20,7 @@ export interface StartMessage {
   mode: string;
   board: number[];
   turnDeadline: number;
+  playerNames: Record<string, string>;
 }
 
 export interface UpdateMessage {
@@ -49,6 +50,8 @@ export interface LeaderboardEntry {
   username: string;
   wins: number;
   losses: number;
+  draws: number;
+  totalGames: number;
   winStreak: number;
 }
 
@@ -84,7 +87,7 @@ class NakamaClient {
     return this.socket !== null && this.session !== null;
   }
 
-  async authenticate(): Promise<Session> {
+  async authenticate(displayName?: string): Promise<Session> {
     let deviceId = localStorage.getItem("nakama_device_id");
     if (!deviceId) {
       deviceId = crypto.randomUUID();
@@ -94,10 +97,21 @@ class NakamaClient {
     this.session = await this.client.authenticateDevice(deviceId, true);
     localStorage.setItem("nakama_user_id", this.session.user_id!);
 
+    if (displayName && displayName.trim()) {
+      await this.client.updateAccount(this.session, {
+        display_name: displayName.trim(),
+        username: displayName.trim().toLowerCase().replace(/[^a-z0-9_]/g, "_").slice(0, 20),
+      });
+    }
+
     this.socket = this.client.createSocket(NAKAMA_USE_SSL, false);
     await this.socket.connect(this.session, true);
 
     return this.session;
+  }
+
+  get displayName() {
+    return localStorage.getItem("nakama_display_name") || this.session?.username || null;
   }
 
   async findMatch(mode: string = "classic"): Promise<string> {

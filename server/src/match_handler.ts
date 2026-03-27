@@ -143,12 +143,30 @@ export const matchJoin: nkruntime.MatchJoinFunction = function (
       s.turnDeadline = Math.floor(Date.now() / 1000) + TURN_TIME_LIMIT_SEC;
     }
 
+    const playerNames: { [userId: string]: string } = {};
+    for (const uid of s.playerOrder) {
+      const p = s.presences[uid];
+      if (p) {
+        try {
+          const accounts = nk.accountsGetId([uid]);
+          if (accounts && accounts.length > 0) {
+            playerNames[uid] = accounts[0].user?.displayName || accounts[0].user?.username || "Player";
+          } else {
+            playerNames[uid] = p.username || "Player";
+          }
+        } catch {
+          playerNames[uid] = p.username || "Player";
+        }
+      }
+    }
+
     const startMsg = {
       marks: s.marks,
       activePlayer: s.activePlayer,
       mode: s.mode,
       board: s.board,
       turnDeadline: s.turnDeadline,
+      playerNames,
     };
 
     dispatcher.broadcastMessage(OpCode.START, JSON.stringify(startMsg));
@@ -323,12 +341,13 @@ export const matchLoop: nkruntime.MatchLoopFunction = function (
       };
       dispatcher.broadcastMessage(OpCode.DONE, JSON.stringify(doneMsg));
 
-      // On draw, just reset streaks for both
       for (const playerId of s.playerOrder) {
         try {
+          nk.leaderboardRecordWrite("draws", playerId, undefined, 1, undefined, undefined);
+          nk.leaderboardRecordWrite("total_games", playerId, undefined, 1, undefined, undefined);
           nk.leaderboardRecordWrite("win_streak", playerId, undefined, 0, undefined, undefined);
         } catch (e) {
-          logger.error("Failed to reset streak on draw for %s: %s", playerId, e);
+          logger.error("Failed to write draw stats for %s: %s", playerId, e);
         }
       }
 
@@ -399,6 +418,7 @@ function writeGameResult(
   try {
     nk.leaderboardRecordWrite("wins", winnerId, undefined, 1, undefined, undefined);
     nk.leaderboardRecordWrite("win_streak", winnerId, undefined, 1, undefined, undefined);
+    nk.leaderboardRecordWrite("total_games", winnerId, undefined, 1, undefined, undefined);
   } catch (e) {
     logger.error("Failed to write winner leaderboard for %s: %s", winnerId, e);
   }
@@ -406,6 +426,7 @@ function writeGameResult(
   try {
     nk.leaderboardRecordWrite("losses", loserId, undefined, 1, undefined, undefined);
     nk.leaderboardRecordWrite("win_streak", loserId, undefined, 0, undefined, undefined);
+    nk.leaderboardRecordWrite("total_games", loserId, undefined, 1, undefined, undefined);
   } catch (e) {
     logger.error("Failed to write loser leaderboard for %s: %s", loserId, e);
   }

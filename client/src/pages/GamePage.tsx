@@ -41,6 +41,7 @@ interface GameState {
   reason: string;
   started: boolean;
   waitingForOpponent: boolean;
+  playerNames: Record<string, string>;
 }
 
 const initialGameState: GameState = {
@@ -55,6 +56,7 @@ const initialGameState: GameState = {
   reason: "",
   started: false,
   waitingForOpponent: true,
+  playerNames: {},
 };
 
 export default function GamePage() {
@@ -104,6 +106,7 @@ export default function GamePage() {
             turnDeadline: msg.turnDeadline || 0,
             started: true,
             waitingForOpponent: false,
+            playerNames: msg.playerNames || {},
           }));
           break;
         }
@@ -193,14 +196,15 @@ export default function GamePage() {
 
   const isMyTurn = game.activePlayer === myUserId;
   const winLine = findWinningLine(game.board);
-  const markLabel = game.myMark === 1 ? "X" : game.myMark === 2 ? "O" : "?";
-  const markColor = game.myMark === 1 ? "text-blue-400" : "text-red-400";
+  const myName = game.playerNames[myUserId] || "You";
+  const opponentId = Object.keys(game.playerNames).find(id => id !== myUserId);
+  const opponentName = opponentId ? game.playerNames[opponentId] : "Opponent";
 
   return (
     <div className="min-h-dvh flex flex-col items-center justify-center px-4 py-8">
       <div className="max-w-sm w-full">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-4">
           <button
             onClick={handleGoHome}
             className="text-gray-500 hover:text-gray-300 transition text-sm flex items-center gap-1 cursor-pointer"
@@ -210,16 +214,27 @@ export default function GamePage() {
             </svg>
             Leave
           </button>
-
-          <div className="flex items-center gap-2 text-sm">
-            <span className="text-gray-500">You:</span>
-            <span className={`font-bold text-lg ${markColor}`}>{markLabel}</span>
-          </div>
-
           <span className="text-xs text-gray-600 capitalize px-2 py-1 bg-gray-800/50 rounded-lg">
             {game.mode}
           </span>
         </div>
+
+        {/* Player names bar */}
+        {game.started && (
+          <div className="flex items-center justify-between mb-5 px-3 py-3 bg-gray-900/80 border border-gray-800 rounded-xl">
+            <div className={`flex items-center gap-2 ${isMyTurn ? "opacity-100" : "opacity-50"}`}>
+              <span className="font-bold text-lg text-blue-400">{game.myMark === 1 ? "X" : "O"}</span>
+              <span className="text-sm text-white font-medium truncate max-w-[100px]">{myName}</span>
+              {isMyTurn && <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />}
+            </div>
+            <span className="text-gray-600 text-xs font-bold">VS</span>
+            <div className={`flex items-center gap-2 ${!isMyTurn && !game.gameOver ? "opacity-100" : "opacity-50"}`}>
+              {!isMyTurn && !game.gameOver && <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />}
+              <span className="text-sm text-white font-medium truncate max-w-[100px]">{opponentName}</span>
+              <span className="font-bold text-lg text-red-400">{game.myMark === 1 ? "O" : "X"}</span>
+            </div>
+          </div>
+        )}
 
         {/* Waiting state */}
         {game.waitingForOpponent && (
